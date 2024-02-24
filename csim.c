@@ -7,21 +7,23 @@
 #include <errno.h>
 
 struct instruction {
-    long addr;
-    int size;
+    unsigned long addr;
+    unsigned long size;
     char op;
 };
 
+typedef struct instruction *instruction_t;
+
 struct ll_node {
-    struct instruction data;
+    instruction_t data;
     struct ll_node *next;
 };
 
-typedef struct ll_node *ll_node_t;
+typedef struct ll_node *node_t;
 
 struct linked_list {
-    ll_node_t head;
-    ll_node_t tail;
+    node_t head;
+    node_t tail;
 };
 
 typedef struct linked_list *linked_list_t;
@@ -32,13 +34,40 @@ void sufficient_memory_check(void *val, const char err_msg[]) {
     }
 }
 
-void add_ll_node(linked_list_t list, ll_node_t node) {
+void add_ll_node(linked_list_t list, node_t node) {
     if (node != NULL) {
-        list->tail->next = node;
-        list->tail = node;
+        if (list->tail == NULL) {
+            list->tail = node;
+            list->head = node;
+        } else {
+            list->tail->next = node;
+            list->tail = node;
+        }
     } else {
-        printf("Error: passed in NULL node to add to a linked list");
+        printf("Error: passed in NULL node to add to a linked list\n");
     }
+}
+
+void display_instruction(instruction_t instruct) {
+    printf("Op: %c, Addr: %lu, Size: %lu\n", instruct->op, instruct->addr, instruct->size);
+}
+
+void display_ll(linked_list_t list) {
+    if (list != NULL) {
+        size_t node_num = 0;
+        node_t curNode = list->head;
+
+        while (curNode != NULL) {
+            printf("Now displaying node #%zu:\n", node_num);
+            display_instruction(curNode->data);
+
+            node_num++;
+            curNode = curNode->next;
+        }
+    } else {
+        printf("Error: passed in NULL linked list to display\n");
+    }
+    printf("(Done displaying linked_list)\n");
 }
 
 int process_trace_file (const char *trace, linked_list_t instructions, unsigned long v_flag) { //0 for success, 1 for error
@@ -48,7 +77,7 @@ int process_trace_file (const char *trace, linked_list_t instructions, unsigned 
         return 1;
     }
 
-    const int LINELEN = 13;
+    const int LINELEN = 14;
     char linebuf[LINELEN];
     int parse_error = 0;
     unsigned long line_num = 0;
@@ -63,23 +92,66 @@ int process_trace_file (const char *trace, linked_list_t instructions, unsigned 
     while (fgets(linebuf, LINELEN, tfp)) {
         line_num++;
         if (v_flag) {
-            printf("\nNext Line to be processed is #%lu: %s\n", line_num, linebuf);
+            printf("\nNext Line to be processed is #%lu: '%s'\n", line_num, linebuf);
         }
 
-        token = strtok(linebuf, separators);
+        if (strcmp(linebuf, "\n\0")) {
 
-        ll_node_t newNode = calloc(1, sizeof(struct ll_node));
-        sufficient_memory_check(newNode, "Insufficient memory!");
+            size_t info_index = 0; //0 = op, 1 = addr, 2 = size
+            token = strtok(linebuf, separators);
 
-        while (token != NULL) {
-            if (v_flag) {
-                printf("Next token to be processed: %s\n", token);
+            node_t newNode = calloc(1, sizeof(struct ll_node));
+            newNode->data = calloc(1, sizeof(struct instruction));
+            sufficient_memory_check(newNode, "Insufficient memory!");
+
+            while (token != NULL) {
+                if (v_flag) {
+                    printf("    Next token to be processed: %s (with info_index of %zu)\n", token, info_index);
+                }
+
+                if (info_index == 0) {
+                    if ((!strcmp(token, "L")) || (!strcmp(token, "S"))) {
+                        newNode->data->op = token[0];
+                    } else {
+                        printf("Incorrect instruction type on line #%lu. Received: %s\n", line_num, token);
+                        exit(0);
+                    }
+                } else if (info_index == 1) {
+                    size_t length = 0;
+                    while (token[length] != '\0') {
+                        length++;
+                    }
+
+                    if (length == 8) {
+                        newNode->data->addr = strtoul(token, NULL, 10);
+                    } else {
+                        printf("Incorrect memory addres on line #%lu. Received: %s, must be 8 numbers of hex in length\n", line_num, token);
+                        exit(0);
+                    }
+                } else {
+                    newNode->data->size = strtoul(token, NULL, 10);
+                }
+
+                info_index++;
+                token = strtok(NULL, separators);
             }
-            token = strtok(NULL, separators);
-        }
 
+            info_index = 0;
+            add_ll_node(instructions, newNode);
+        } else {
+            if (v_flag) {
+                printf("Skipping this line...\n");
+            }
+        }
 
     }
+
+    if (v_flag) {
+        printf("\n------------------------DONE PROCESSING FILE------------------------\n\n");
+        printf("Created linked_list: \n");
+        display_ll(instructions);
+    }
+
     fclose(tfp);
     return parse_error;
 }
@@ -123,10 +195,10 @@ int main(int argc, char **argv) {
                     index++;
                 }
 
-                size_t length = index;
-                file_name = malloc(sizeof(char) * (index+1));
-                index = 0;
+                size_t length = index+1;
+                file_name = malloc(sizeof(char) * length);
 
+                index = 0;
                 while (index < length) {
                     file_name[index] = optarg[index];
                     index++;
@@ -159,6 +231,7 @@ int main(int argc, char **argv) {
     if (req_flags[0] + req_flags[2] > 16) {
         printf("Error: Values of s and b are cumulatively too large! (s + b > 16)");
     }
+
 
     if (v_flag) {
         printf("Verbose argumet set to 1...\n");
