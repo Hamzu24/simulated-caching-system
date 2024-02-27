@@ -72,6 +72,7 @@ void free_ll(linked_list_t list) {
         curNode = curNode->next;
         free(prev);
     }
+    free(list);
 }
 
 void display_instruction(instruction_t instruct) {
@@ -96,7 +97,7 @@ void display_ll(linked_list_t list) {
     printf("(Done displaying linked_list)\n");
 }
 
-int process_trace_file (const char *trace, linked_list_t instructions, unsigned long v_flag) { //0 for success, 1 for error
+int process_trace_file (const char *trace, linked_list_t instructions, unsigned long v_flag, unsigned long req_flags[3]) { //0 for success, 1 for error
     FILE *tfp = fopen(trace, "rt");
     if (!tfp) {
         fprintf(stderr, "Error opening '%s': %s\n", trace, strerror(errno));
@@ -148,6 +149,9 @@ int process_trace_file (const char *trace, linked_list_t instructions, unsigned 
                         length++;
                     }
 
+                    /*if (length > 16 || ) {
+
+                    }*/
                     newNode->data->addr = strtoul(token, NULL, 16);
                 } else {
                     newNode->data->size = strtoul(token, NULL, 10);
@@ -223,7 +227,7 @@ int main(int argc, char **argv) {
                     file_name[index] = optarg[index];
                     index++;
                 }
-                file_name[length] = '\0';
+                file_name[length-1] = '\0';
 
             break;
 
@@ -240,12 +244,11 @@ int main(int argc, char **argv) {
     unsigned long curFlag;
     for (int i = 0; i < 3; i++) {
         curFlag = req_flags[i];
-        if (curFlag <= 0) {
+        if (curFlag < 0 || (i == 1 && curFlag == 0)) {
             printf("Error: all flags must be >= 0");
             exit(0);
         }
     }
-
 
     if (req_flags[0] + req_flags[2] > 16) {
         printf("Error: Values of s and b are cumulatively too large! (s + b > 16)");
@@ -256,21 +259,25 @@ int main(int argc, char **argv) {
         printf("Verbose argumet set to 1...\n");
     }
 
-    int error_status = process_trace_file(file_name, instructions, v_flag);
-    printf("%d\n", error_status);
-
     int num_sets = (int) pow(2, (int) req_flags[0]);
     int num_lines = (int) req_flags[1];
+    int error_status = process_trace_file(file_name, instructions, v_flag, req_flags);
+    if (error_status != 0) {
+        printf("Fatal error in parsing the trace file...\n");
+        exit(1);
+    }
+
     line_t cache[num_sets * num_lines];
     for (int i = 0; i < num_sets * num_lines; i++) {
         cache[i] = calloc(1, sizeof(struct line));
         sufficient_memory_check(cache[i], "Insufficient Memory to create cache on Heap!\n");
+        cache[i]->isValid = false;
+        cache[i]->isDirty = false;
     }
 
     node_t curNode = instructions->head;
     unsigned long set_mask = ~(0xFFFFFFFF << (long) req_flags[0]);
     unsigned long tag_mask = ~(0xFFFFFFFF << (long) req_flags[1]);
-    unsigned long tag_shr = (64L - req_flags[1]);
 
     if (v_flag) {
         printf("set_mask: %lu, tag_mask: %lu\n", set_mask, tag_mask);
@@ -280,8 +287,8 @@ int main(int argc, char **argv) {
     while (curNode != NULL) {
         instruction_t curInstruction = curNode->data;
 
-        unsigned long tag = (curInstruction->addr >> tag_shr) & tag_mask;
-        unsigned long set = (((curInstruction->addr) << req_flags[1]) >> (64L -(req_flags[1] + req_flags[0]))) & set_mask;
+        unsigned long tag = (curInstruction->addr >> (long) (req_flags[2] + req_flags[0])) & tag_mask;
+        unsigned long set = (curInstruction->addr >> req_flags[2]) & set_mask;
         if (v_flag) {
             printf("Next Instruction: Op: (%c), Addr: (%lu), Size: (%lu)\n", curInstruction->op, curInstruction->addr, curInstruction->size);
             printf("Tag: %lu, Set: %lu\n\n", tag, set);
@@ -333,7 +340,9 @@ int main(int argc, char **argv) {
 
         if (isHit) {
             stats->hits++;
-            printf("Hit! With line #%lu\n\n\n", LRU);
+            if (v_flag) {
+                printf("Hit! With line #%lu\n\n\n", LRU);
+            }
             line_t hit_line = get_cache_index(cache, num_lines, set, (unsigned long) LRU);
             hit_line->cycles_since_use = 0;
 
@@ -343,7 +352,9 @@ int main(int argc, char **argv) {
                 stats->evictions++;
 
                 line_t evicted_line = get_cache_index(cache, num_lines, set, (unsigned long) LRU);
-                printf("Miss and eviction! Line #%ld was evicted and had tag %lu, but now has tag %lu\n\n\n", LRU, evicted_line->tag, tag);
+                if (v_flag) {
+                    printf("Miss and eviction! Line #%ld was evicted and had tag %lu, but now has tag %lu\n\n\n", LRU, evicted_line->tag, tag);
+                }
                 if (evicted_line->isDirty) {
                     stats->dirty_evictions++;
                     stats->dirty_bytes--;
@@ -351,8 +362,9 @@ int main(int argc, char **argv) {
                 evicted_line->tag = tag;
                 evicted_line->cycles_since_use = 0;
             } else {
-               printf("Miss, no eviction! Inserting the address into line #%ld with tag %lu\n\n\n", LRU, tag);
-
+                if (v_flag) {
+                    printf("Miss, no eviction! Inserting the address into line #%ld with tag %lu\n\n\n", LRU, tag);
+                }
                 line_t new_line = get_cache_index(cache, num_lines, set, (unsigned long) LRU);
                 new_line->isValid = true;
                 new_line->tag = tag;
@@ -371,6 +383,7 @@ int main(int argc, char **argv) {
 
     free(stats);
     free_ll(instructions);
+    free(file_name);
 
     for (int i = 0; i < num_sets * num_lines; i++) {
         free(cache[i]);
