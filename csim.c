@@ -94,7 +94,7 @@ void display_ll(linked_list_t list) {
     } else {
         printf("Error: passed in NULL linked list to display\n");
     }
-    printf("(Done displaying linked_list)\n");
+    printf("Displayed linked_list fully\n");
 }
 
 int process_trace_file (const char *trace, linked_list_t instructions, unsigned long v_flag, unsigned long req_flags[3]) { //0 for success, 1 for error
@@ -175,6 +175,7 @@ int process_trace_file (const char *trace, linked_list_t instructions, unsigned 
         printf("\n------------------------DONE PROCESSING FILE------------------------\n\n");
         printf("Created linked_list: \n");
         display_ll(instructions);
+        printf("Reached");
     }
 
     fclose(tfp);
@@ -245,13 +246,19 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 3; i++) {
         curFlag = req_flags[i];
         if (curFlag < 0 || (i == 1 && curFlag == 0)) {
-            printf("Error: all flags must be >= 0");
+            printf("Error: E must be > 0 and s, b >= 0\n");
             exit(0);
         }
     }
 
-    if (req_flags[0] + req_flags[2] > 16) {
-        printf("Error: Values of s and b are cumulatively too large! (s + b > 16)");
+    if (file_name == NULL) {
+        printf("Error: did not specify a trace file to execute\n");
+        exit(1);
+    }
+
+    if (req_flags[0] + req_flags[2] > 63) {
+        printf("Error: Values of s and b are cumulatively too large!\n");
+        exit(1);
     }
 
 
@@ -276,8 +283,16 @@ int main(int argc, char **argv) {
     }
 
     node_t curNode = instructions->head;
-    unsigned long set_mask = ~(0xFFFFFFFF << (long) req_flags[0]);
-    unsigned long tag_mask = ~(0xFFFFFFFF << (long) req_flags[1]);
+
+    unsigned long sb_sum = req_flags[0] + req_flags[2];
+    unsigned long tag_shl = (unsigned long) 64 - sb_sum;
+    unsigned long set_mask = ~(0xFFFFFFFFFFFFFFFFL << (long) req_flags[0]);
+    unsigned long tag_mask;
+    if (tag_shl == 64) {
+       tag_mask = 0xFFFFFFFFFFFFFFFFL;
+    } else {
+       tag_mask = ~(0xFFFFFFFFFFFFFFFFL << (long) (64 - sb_sum));
+    }
 
     if (v_flag) {
         printf("set_mask: %lu, tag_mask: %lu\n", set_mask, tag_mask);
@@ -287,7 +302,7 @@ int main(int argc, char **argv) {
     while (curNode != NULL) {
         instruction_t curInstruction = curNode->data;
 
-        unsigned long tag = (curInstruction->addr >> (long) (req_flags[2] + req_flags[0])) & tag_mask;
+        unsigned long tag = (curInstruction->addr >> (long) sb_sum) & tag_mask;
         unsigned long set = (curInstruction->addr >> req_flags[2]) & set_mask;
         if (v_flag) {
             printf("Next Instruction: Op: (%c), Addr: (%lu), Size: (%lu)\n", curInstruction->op, curInstruction->addr, curInstruction->size);
@@ -338,6 +353,7 @@ int main(int argc, char **argv) {
             }
         }
 
+
         if (isHit) {
             stats->hits++;
             if (v_flag) {
@@ -358,6 +374,7 @@ int main(int argc, char **argv) {
                 if (evicted_line->isDirty) {
                     stats->dirty_evictions++;
                     stats->dirty_bytes--;
+                    evicted_line->isDirty = false;
                 }
                 evicted_line->tag = tag;
                 evicted_line->cycles_since_use = 0;
@@ -372,13 +389,19 @@ int main(int argc, char **argv) {
         }
 
         if (curInstruction->op == 'S') {
-            get_cache_index(cache, num_lines, set,(unsigned long) LRU)->isDirty = true;
-            stats->dirty_bytes++;
+            line_t cur_line = get_cache_index(cache, num_lines, set, (unsigned long) LRU);
+            if (!cur_line->isDirty) {
+                stats->dirty_bytes++;
+            }
+            cur_line->isDirty = true;
         }
 
         curNode = curNode->next;
     }
 
+    unsigned long multiplier = (unsigned long) pow(2, (int) req_flags[2]);
+    stats->dirty_bytes = (stats->dirty_bytes * multiplier);
+    stats->dirty_evictions = (stats->dirty_evictions * multiplier);
     printSummary(stats);
 
     free(stats);
