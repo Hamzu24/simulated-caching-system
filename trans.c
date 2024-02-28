@@ -123,9 +123,7 @@ static void trans_tmp(size_t M, size_t N, double A[N][M], double B[M][N],
  * this function must be correct for all values of M and N.
  */
 static void transpose_submit(size_t M, size_t N, double A[N][M], double B[M][N],
-                             double tmp[TMPCOUNT]) {
-
-}
+                             double tmp[TMPCOUNT]) {}
 
 /**
  * @brief Registers all transpose functions with the driver.
