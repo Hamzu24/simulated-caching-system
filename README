@@ -1,42 +1,42 @@
-This is the handout directory for the 15-213 Cache Lab.
+## Cache Simulator
 
-************************
-Running the autograders:
-************************
+A cache simulator that models the behavior of a CPU cache hierarchy by processing memory access traces. The program simulates cache operations (loads and stores) and tracks performance metrics.
 
-Before running the autograders, compile your code:
-    linux> make
+### Features
 
-Check the correctness of your simulator:
-    linux> ./test-csim
+- **Configurable Cache Parameters:**
+  - Set index bits (`-s`): Number of cache sets (2^s)
+  - Associativity (`-E`): Lines per set
+  - Block bits (`-b`): Block size (2^b bytes)
 
-Check the correctness and performance of your transpose functions:
-    linux> ./test-trans -M 32 -N 32
-    linux> ./test-trans -M 1024 -N 1024
+- **LRU Replacement Policy:** Implements Least Recently Used eviction strategy
 
-Check everything at once (this is the program that Autolab runs):
-    linux> ./driver.py
+- **Dirty Bit Tracking:** Monitors write-back cache behavior with dirty byte accounting
 
-******
-Files:
-******
+- **Performance Metrics:**
+  - Cache hits and misses
+  - Evictions
+  - Dirty evictions
+  - Total dirty bytes
 
-# You will handing in these two files
-csim.c                  Your cache simulator [You must create this file]
-trans.c                 Your transpose function(s) [Starter version included]
+- **Verbose Mode:** Optional detailed trace of each memory operation (`-v` flag)
 
-# Tools for evaluating your simulator and transpose function
-Makefile                Builds the simulator and tools
-README                  This file
-cachelab.c              Required helper functions
-cachelab.h              Required header file
-csim-ref*               The executable reference cache simulator
-driver.py*              The cache lab driver program, runs test-csim and test-trans
-test-csim.c             Tests your cache simulator
-test-trans.c            Tests your transpose function
-ct/                     Code to support address tracing when running the transpose code
-tracegen-ct.c           Helper program used by test-trans, which you can run directly.
-traces-driver.py        The driver to test the traces you write
-traces/                 All trace files used in cachelab
-traces/traces           Trace you write for the traces portion of the assignment
-traces/csim             Traces used by the driver to test your cache simulator (Part A)
+### Usage
+```bash
+./csim -s  -E  -b  -t  [-v]
+```
+
+### Input Format
+
+Reads trace files containing memory operations:
+- `L` - Load operation
+- `S` - Store operation
+
+Each line: `<operation> <address>,<size>`
+
+### Implementation
+
+- Simulates set-associative cache with configurable parameters
+- Parses hexadecimal memory addresses into tag, set index, and block offset
+- Tracks cache line state (valid, dirty, LRU counter)
+- Outputs summary statistics for cache performance analysis
